@@ -6,6 +6,7 @@ use std::io::{prelude::*, BufReader, ErrorKind};
 use std::thread::sleep;
 use std::time::{Duration, Instant};
 
+
 #[derive(Clone, Copy, Debug)]
 struct DecompEntry {
     color: u16,
@@ -190,15 +191,14 @@ fn main() {
             }
             0x70 => {
                 // decompress 8bit
-                let mut addr = bulkstream.read_u24::<BigEndian>().unwrap() as usize;
+                let addr = bulkstream.read_u24::<BigEndian>().unwrap() as usize;
                 let cnt = wrap256(bulkstream.read_u8().unwrap());
 
                 let mut tableidx = 0;
-                let mut color_acc = 0u8;
+                let mut accumulator = 0u8;
                 let mut bitcnt = 8;
                 let mut bytebuf = 0;
-                for _ in 0..cnt {
-                    let mut loop_acc = 0u8;
+                for i in 0..cnt {
                     loop {
                         if bitcnt == 8 {
                             bytebuf = bulkstream.read_u8().unwrap();
@@ -207,29 +207,26 @@ fn main() {
                         let decomp_entry = &decomp_table[tableidx][(bytebuf & 1) as usize];
                         bytebuf >>= 1;
                         bitcnt += 1;
-                        loop_acc = loop_acc.wrapping_add((decomp_entry.color & 0xff) as u8);
+                        accumulator = accumulator.wrapping_add((decomp_entry.color & 0xff) as u8);
                         tableidx = decomp_entry.nextjump;
                         if tableidx == 0 {
                             break;
                         }
                     }
-                    color_acc = color_acc.wrapping_add(loop_acc);
-                    gfxram[addr] = color_acc;
-                    addr += 1;
+                    gfxram[addr + i] = accumulator;
                     tableidx = 0;
                 }
             }
             0x78 => {
                 // decompress 16bit
-                let mut addr = bulkstream.read_u24::<BigEndian>().unwrap() as usize;
+                let addr = bulkstream.read_u24::<BigEndian>().unwrap() as usize;
                 let cnt = wrap256(bulkstream.read_u8().unwrap());
 
                 let mut tableidx = 8;
-                let mut color_acc = 0u16;
+                let mut accumulator = 0u16;
                 let mut bitcnt = 8;
                 let mut bytebuf = 0;
-                for _ in 0..cnt {
-                    let mut loop_acc = 0u16;
+                for i in 0..cnt {
                     loop {
                         if bitcnt == 8 {
                             bytebuf = bulkstream.read_u8().unwrap();
@@ -238,16 +235,14 @@ fn main() {
                         let decomp_entry = &decomp_table[tableidx][(bytebuf & 1) as usize];
                         bytebuf >>= 1;
                         bitcnt += 1;
-                        loop_acc = loop_acc.wrapping_add(decomp_entry.color);
+                        accumulator = accumulator.wrapping_add(decomp_entry.color);
                         tableidx = decomp_entry.nextjump;
                         if tableidx == 0 {
                             break;
                         }
                     }
-                    color_acc = color_acc.wrapping_add(loop_acc);
-                    gfxram[addr + 1] = (color_acc >> 8) as u8;
-                    gfxram[addr] = (color_acc & 0xff) as u8;
-                    addr += 2;
+                    gfxram[addr + i * 2 + 1] = (accumulator >> 8) as u8;
+                    gfxram[addr + i * 2] = (accumulator & 0xff) as u8;
                     tableidx = 8;
                 }
             }
