@@ -16,7 +16,7 @@ struct Frame {
     data: Vec<u8>,
 }
 
-const FRAME_DURATION: Duration = Duration::new(0, 1_000_000_000u32 / 30);
+const FRAME_DURATION: Duration = Duration::new(0, 1_000_000_000u32 / 60);
 
 fn main() {
     let (sender, receiver) = sync_channel::<Frame>(10);
@@ -115,7 +115,6 @@ fn main() {
     let texture_creator = canvas.texture_creator();
     let mut rendertex: Option<Texture> = None;
     let mut event_pump = sdl_context.event_pump().unwrap();
-    let mut last_time = Instant::now();
     let mut cur_size = (0, 0);
     let mut playing = true;
     'mainloop: loop {
@@ -133,6 +132,7 @@ fn main() {
                 _ => {}
             }
         }
+        let last_time = Instant::now();
         if playing {
             match receiver.try_recv() {
                 Ok(frame) => {
@@ -162,9 +162,7 @@ fn main() {
                 }
             }
         }
-        let now = Instant::now();
-        let delta = now - last_time;
-        last_time = now;
+        let delta = Instant::now() - last_time;
         if delta > FRAME_DURATION {
             if delta.subsec_millis() > FRAME_DURATION.subsec_millis() + 5 {
                 println!(
@@ -173,9 +171,8 @@ fn main() {
                     FRAME_DURATION.subsec_millis()
                 );
             }
-        } else {
-            sleep(FRAME_DURATION - delta);
         }
+        sleep(FRAME_DURATION);
     }
     println!("loop finished");
     // let mut ramdump = File::create_new("ramdump").unwrap();
