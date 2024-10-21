@@ -29,46 +29,37 @@ fn main() {
         let mut decoder_ctx = DLDecoder::default();
         let mut dbg = vec![];
 
-        'run: loop {
-            if let Ok(result) = decoder_ctx.parse_cmd(&mut bulkstream) {
-                match result {
-                    DLDecoderResult::SETREG(addr, val) => {
-                        match addr {
-                            0xff => {
-                                if val == 0xff && decoder_ctx.get_reg(0x1f) == 0 {
-                                    // display new frame
-                                    let addr = decoder_ctx.get_current_address();
-                                    let w = decoder_ctx.get_width();
-                                    let h = decoder_ctx.get_height();
-                                    let len = w * h * 2;
-                                    let mut data = vec![0u8; len];
-                                    decoder_ctx.dumpbuffer(&mut data, addr, len);
-                                    if sender
-                                        .send(Frame {
-                                            size: (w as u32, h as u32),
-                                            data,
-                                            addr,
-                                            dbg,
-                                        })
-                                        .is_err()
-                                    {
-                                        break 'run;
-                                    }
-                                    dbg = vec![];
-                                }
-                            }
-                            _ => {}
+        while let Ok(result) = decoder_ctx.parse_cmd(&mut bulkstream) {
+            match result {
+                DLDecoderResult::Setreg(addr, val) => {
+                    if addr == 0xff && val == 0xff && decoder_ctx.get_reg(0x1f) == 0 {
+                        // display new frame
+                        let addr = decoder_ctx.get_current_address();
+                        let w = decoder_ctx.get_width();
+                        let h = decoder_ctx.get_height();
+                        let len = w * h * 2;
+                        let mut data = vec![0u8; len];
+                        decoder_ctx.dumpbuffer(&mut data, addr, len);
+                        if sender
+                            .send(Frame {
+                                size: (w as u32, h as u32),
+                                data,
+                                addr,
+                                dbg,
+                            })
+                            .is_err()
+                        {
+                            break;
                         }
+                        dbg = vec![];
                     }
-                    DLDecoderResult::FILL(_, _, true)
-                    | DLDecoderResult::MEMCPY(_, _, true)
-                    | DLDecoderResult::DECOMP(_, _, true) => {
-                        dbg.push(result);
-                    }
-                    _ => {}
                 }
-            } else {
-                break 'run;
+                DLDecoderResult::Fill(_, _, true)
+                | DLDecoderResult::Memcpy(_, _, true)
+                | DLDecoderResult::Decomp(_, _, true) => {
+                    dbg.push(result);
+                }
+                _ => {}
             }
         }
         println!("decode thread finished");
@@ -146,22 +137,22 @@ fn main() {
                                 c.clear();
                                 for i in &frame.dbg {
                                     let color = match i {
-                                        DLDecoderResult::FILL(_, _, true) => {
+                                        DLDecoderResult::Fill(_, _, true) => {
                                             Color::RGBA(255, 0, 0, 51)
                                         }
-                                        DLDecoderResult::DECOMP(_, _, true) => {
+                                        DLDecoderResult::Decomp(_, _, true) => {
                                             Color::RGBA(0, 255, 0, 51)
                                         }
-                                        DLDecoderResult::MEMCPY(_, _, true) => {
+                                        DLDecoderResult::Memcpy(_, _, true) => {
                                             Color::RGBA(0, 0, 255, 51)
                                         }
                                         _ => Color::RGBA(0, 0, 0, 0),
                                     };
                                     c.set_draw_color(color);
                                     match i {
-                                        DLDecoderResult::FILL(addr, len, _)
-                                        | DLDecoderResult::DECOMP(addr, len, _)
-                                        | DLDecoderResult::MEMCPY(addr, len, _) => {
+                                        DLDecoderResult::Fill(addr, len, _)
+                                        | DLDecoderResult::Decomp(addr, len, _)
+                                        | DLDecoderResult::Memcpy(addr, len, _) => {
                                             let width = frame.size.0 as i32;
                                             let start = ((addr - frame.addr) >> 1) as i32;
                                             let len = *len as i32;
@@ -188,11 +179,11 @@ fn main() {
         }
 
         if let Some(tex) = &mut rendertex {
-            canvas.copy(&tex, None, None).unwrap();
+            canvas.copy(tex, None, None).unwrap();
         }
         if draw_debug {
             if let Some(tex) = &mut debugtex {
-                canvas.copy(&tex, None, None).unwrap();
+                canvas.copy(tex, None, None).unwrap();
             }
         }
         canvas.present();
