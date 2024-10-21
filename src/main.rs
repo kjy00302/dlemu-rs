@@ -67,31 +67,31 @@ fn main() {
                 }
                 0x61 => {
                     // fill 8bit
-                    decoder_ctx.fill8(&mut bulkstream);
+                    decoder_ctx.fill8(&mut bulkstream).unwrap();
                 }
                 0x62 => {
                     // memcpy 8bit
-                    decoder_ctx.memcopy8(&mut bulkstream);
+                    decoder_ctx.memcopy8(&mut bulkstream).unwrap();
                 }
                 0x69 => {
                     // fill 16bit
-                    decoder_ctx.fill16(&mut bulkstream);
+                    decoder_ctx.fill16(&mut bulkstream).unwrap();
                 }
                 0x6a => {
                     // memcpy 16bit
-                    decoder_ctx.memcopy16(&mut bulkstream);
+                    decoder_ctx.memcopy16(&mut bulkstream).unwrap();
                 }
                 0x70 => {
                     // decompress 8bit
-                    decoder_ctx.decomp8(&mut bulkstream);
+                    decoder_ctx.decomp8(&mut bulkstream).unwrap();
                 }
                 0x78 => {
                     // decompress 16bit
-                    decoder_ctx.decomp16(&mut bulkstream);
+                    decoder_ctx.decomp16(&mut bulkstream).unwrap();
                 }
                 0xe0 => {
                     // load decompression table
-                    decoder_ctx.load_decomp(&mut bulkstream);
+                    decoder_ctx.load_decomp(&mut bulkstream).unwrap();
                 }
                 0xa0 => {}
                 i => {

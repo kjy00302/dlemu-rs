@@ -31,51 +31,55 @@ impl DLDecoder {
         buf.copy_from_slice(&self.gfxram[addr..addr + len]);
     }
 
-    pub fn load_decomp(&mut self, reader: &mut dyn BufRead) {
+    pub fn load_decomp(&mut self, reader: &mut dyn BufRead) -> Result<(), std::io::Error> {
         reader.consume(4);
-        let cnt = reader.read_u32::<BigEndian>().unwrap();
+        let cnt = reader.read_u32::<BigEndian>()?;
         let mut nodebuf = [0u8; 9];
         for i in 0..cnt {
-            reader.read(&mut nodebuf).unwrap();
+            reader.read_exact(&mut nodebuf)?;
             self.decomp_table[i as usize] = DecompNode::read_from(&nodebuf);
         }
+        Ok(())
     }
 
-    pub fn memcopy8(&mut self, reader: &mut dyn BufRead) {
-        let dstaddr = reader.read_u24::<BigEndian>().unwrap() as usize;
-        let cnt = wrap256(reader.read_u8().unwrap());
-        let srcaddr = reader.read_u24::<BigEndian>().unwrap() as usize;
+    pub fn memcopy8(&mut self, reader: &mut dyn BufRead) -> Result<(), std::io::Error> {
+        let dstaddr = reader.read_u24::<BigEndian>()? as usize;
+        let cnt = wrap256(reader.read_u8()?);
+        let srcaddr = reader.read_u24::<BigEndian>()? as usize;
         self.gfxram.copy_within(srcaddr..srcaddr + cnt, dstaddr);
+        Ok(())
     }
 
-    pub fn memcopy16(&mut self, reader: &mut dyn BufRead) {
-        let dstaddr = reader.read_u24::<BigEndian>().unwrap() as usize;
-        let cnt = wrap256(reader.read_u8().unwrap()) * 2;
-        let srcaddr = reader.read_u24::<BigEndian>().unwrap() as usize;
+    pub fn memcopy16(&mut self, reader: &mut dyn BufRead) -> Result<(), std::io::Error> {
+        let dstaddr = reader.read_u24::<BigEndian>()? as usize;
+        let cnt = wrap256(reader.read_u8()?) * 2;
+        let srcaddr = reader.read_u24::<BigEndian>()? as usize;
         self.gfxram.copy_within(srcaddr..srcaddr + cnt, dstaddr);
+        Ok(())
     }
 
-    pub fn fill8(&mut self, reader: &mut dyn BufRead) {
-        let mut addr = reader.read_u24::<BigEndian>().unwrap() as usize;
-        let mut totalcnt = wrap256(reader.read_u8().unwrap());
+    pub fn fill8(&mut self, reader: &mut dyn BufRead) -> Result<(), std::io::Error> {
+        let mut addr = reader.read_u24::<BigEndian>()? as usize;
+        let mut totalcnt = wrap256(reader.read_u8()?);
         while totalcnt > 0 {
-            let cnt = wrap256(reader.read_u8().unwrap());
-            let value = reader.read_u8().unwrap();
+            let cnt = wrap256(reader.read_u8()?);
+            let value = reader.read_u8()?;
             for i in 0..cnt {
                 self.gfxram[addr + i] = value;
             }
             totalcnt -= cnt;
             addr += cnt;
         }
+        Ok(())
     }
 
-    pub fn fill16(&mut self, reader: &mut dyn BufRead) {
-        let mut addr = reader.read_u24::<BigEndian>().unwrap() as usize;
-        let mut totalcnt = wrap256(reader.read_u8().unwrap());
+    pub fn fill16(&mut self, reader: &mut dyn BufRead) -> Result<(), std::io::Error> {
+        let mut addr = reader.read_u24::<BigEndian>()? as usize;
+        let mut totalcnt = wrap256(reader.read_u8()?);
         while totalcnt > 0 {
-            let cnt = wrap256(reader.read_u8().unwrap());
+            let cnt = wrap256(reader.read_u8()?);
             let mut value = [0u8; 2];
-            reader.read_exact(&mut value).unwrap();
+            reader.read_exact(&mut value)?;
             for i in 0..cnt {
                 self.gfxram[addr + i * 2] = value[1];
                 self.gfxram[addr + i * 2 + 1] = value[0];
@@ -83,11 +87,12 @@ impl DLDecoder {
             totalcnt -= cnt;
             addr += cnt * 2;
         }
+        Ok(())
     }
 
-    pub fn decomp8(&mut self, reader: &mut dyn BufRead) {
-        let addr = reader.read_u24::<BigEndian>().unwrap() as usize;
-        let cnt = wrap256(reader.read_u8().unwrap());
+    pub fn decomp8(&mut self, reader: &mut dyn BufRead) -> Result<(), std::io::Error> {
+        let addr = reader.read_u24::<BigEndian>()? as usize;
+        let cnt = wrap256(reader.read_u8()?);
 
         let mut tableidx = 0;
         let mut accumulator = 0u8;
@@ -96,7 +101,7 @@ impl DLDecoder {
         for i in 0..cnt {
             loop {
                 if bitcnt == 8 {
-                    bytebuf = reader.read_u8().unwrap();
+                    bytebuf = reader.read_u8()?;
                     bitcnt = 0;
                 }
                 let decomp_entry = &self.decomp_table[tableidx][(bytebuf & 1) as usize];
@@ -111,11 +116,12 @@ impl DLDecoder {
             self.gfxram[addr + i] = accumulator;
             tableidx = 0;
         }
+        Ok(())
     }
 
-    pub fn decomp16(&mut self, reader: &mut dyn BufRead) {
-        let addr = reader.read_u24::<BigEndian>().unwrap() as usize;
-        let cnt = wrap256(reader.read_u8().unwrap());
+    pub fn decomp16(&mut self, reader: &mut dyn BufRead) -> Result<(), std::io::Error> {
+        let addr = reader.read_u24::<BigEndian>()? as usize;
+        let cnt = wrap256(reader.read_u8()?);
 
         let mut tableidx = 8;
         let mut accumulator = 0u16;
@@ -124,7 +130,7 @@ impl DLDecoder {
         for i in 0..cnt {
             loop {
                 if bitcnt == 8 {
-                    bytebuf = reader.read_u8().unwrap();
+                    bytebuf = reader.read_u8()?;
                     bitcnt = 0;
                 }
                 let decomp_entry = &self.decomp_table[tableidx][(bytebuf & 1) as usize];
@@ -140,5 +146,6 @@ impl DLDecoder {
             self.gfxram[addr + i * 2] = (accumulator & 0xff) as u8;
             tableidx = 8;
         }
+        Ok(())
     }
 }
