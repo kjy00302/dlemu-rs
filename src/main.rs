@@ -1,5 +1,5 @@
 use byteorder::{BigEndian, ByteOrder, ReadBytesExt};
-use sdl2::{event::Event, pixels::PixelFormatEnum, render::Texture};
+use sdl2::{event::Event, keyboard::Keycode, pixels::PixelFormatEnum, render::Texture};
 use std::env::args;
 use std::fs::File;
 use std::io::{BufReader, ErrorKind};
@@ -117,52 +117,64 @@ fn main() {
     let mut event_pump = sdl_context.event_pump().unwrap();
     let mut last_time = Instant::now();
     let mut cur_size = (0, 0);
+    let mut playing = true;
     'mainloop: loop {
         for event in event_pump.poll_iter() {
-            if let Event::Quit { .. } = event {
-                break 'mainloop;
+            match event {
+                Event::Quit { .. } => break 'mainloop,
+                Event::KeyDown {
+                    keycode,
+                    repeat: false,
+                    ..
+                } => match keycode {
+                    Some(Keycode::Space) => playing = !playing,
+                    _ => {}
+                },
+                _ => {}
             }
         }
-        match receiver.try_recv() {
-            Ok(frame) => {
-                if frame.size != cur_size {
-                    let (w, h) = frame.size;
-                    canvas.window_mut().set_size(w, h).unwrap();
-                    rendertex = Some(
-                        texture_creator
-                            .create_texture_streaming(PixelFormatEnum::RGB565, w, h)
-                            .unwrap(),
-                    );
-                    println!("output resize: {}x{}", w, h);
-                    cur_size = frame.size;
-                }
-                if let Some(tex) = &mut rendertex {
-                    tex.with_lock(None, |buffer: &mut [u8], _pitch: usize| {
-                        buffer.copy_from_slice(&frame.data);
-                    })
-                    .unwrap();
-                    canvas.copy(tex, None, None).unwrap();
-                }
-                canvas.present();
-                let now = Instant::now();
-                let delta = now - last_time;
-                last_time = now;
-                if delta > FRAME_DURATION {
-                    if delta.subsec_millis() > FRAME_DURATION.subsec_millis() + 5 {
-                        println!(
-                            "framerate drop: {}ms > {}ms",
-                            delta.subsec_millis(),
-                            FRAME_DURATION.subsec_millis()
+        if playing {
+            match receiver.try_recv() {
+                Ok(frame) => {
+                    if frame.size != cur_size {
+                        let (w, h) = frame.size;
+                        canvas.window_mut().set_size(w, h).unwrap();
+                        rendertex = Some(
+                            texture_creator
+                                .create_texture_streaming(PixelFormatEnum::RGB565, w, h)
+                                .unwrap(),
                         );
+                        println!("output resize: {}x{}", w, h);
+                        cur_size = frame.size;
                     }
-                } else {
-                    sleep(FRAME_DURATION - delta);
+                    if let Some(tex) = &mut rendertex {
+                        tex.with_lock(None, |buffer: &mut [u8], _pitch: usize| {
+                            buffer.copy_from_slice(&frame.data);
+                        })
+                        .unwrap();
+                        canvas.copy(tex, None, None).unwrap();
+                    }
+                    canvas.present();
+                }
+                Err(TryRecvError::Empty) => {}
+                Err(TryRecvError::Disconnected) => {
+                    break;
                 }
             }
-            Err(TryRecvError::Empty) => {}
-            Err(TryRecvError::Disconnected) => {
-                break;
+        }
+        let now = Instant::now();
+        let delta = now - last_time;
+        last_time = now;
+        if delta > FRAME_DURATION {
+            if delta.subsec_millis() > FRAME_DURATION.subsec_millis() + 5 {
+                println!(
+                    "framerate drop: {}ms > {}ms",
+                    delta.subsec_millis(),
+                    FRAME_DURATION.subsec_millis()
+                );
             }
+        } else {
+            sleep(FRAME_DURATION - delta);
         }
     }
     println!("loop finished");
