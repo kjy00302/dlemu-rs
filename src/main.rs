@@ -7,7 +7,7 @@ use std::io::BufReader;
 use std::sync::mpsc::{sync_channel, TryRecvError};
 use std::thread;
 use std::thread::sleep;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 mod dldecoder;
 use dldecoder::{DLDecoder, DLDecoderResult};
@@ -112,7 +112,6 @@ fn main() {
                 _ => {}
             }
         }
-        let last_time = Instant::now();
         if playing | stepping {
             match receiver.try_recv() {
                 Ok(frame) => {
@@ -203,16 +202,6 @@ fn main() {
             }
         }
         canvas.present();
-        let delta = Instant::now() - last_time;
-        if delta > FRAME_DURATION {
-            if delta.subsec_millis() > FRAME_DURATION.subsec_millis() + 5 {
-                println!(
-                    "framerate drop: {}ms > {}ms",
-                    delta.subsec_millis(),
-                    FRAME_DURATION.subsec_millis()
-                );
-            }
-        }
         sleep(FRAME_DURATION);
     }
     println!("loop finished");
