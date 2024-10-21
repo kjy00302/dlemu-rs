@@ -1,16 +1,37 @@
 use sdl2::{
     event::Event, keyboard::Keycode, pixels::Color, pixels::PixelFormatEnum, render::Texture,
 };
-use std::env::args;
 use std::fs::File;
 use std::io::BufReader;
+use std::path::PathBuf;
 use std::sync::mpsc::{sync_channel, TryRecvError};
 use std::thread;
 use std::thread::sleep;
 use std::time::Duration;
 
+use clap::Parser;
+
 mod dldecoder;
 use dldecoder::{DLDecoder, DLDecoderResult};
+
+#[derive(Parser)]
+#[command(version, about, long_about = None)]
+struct Args {
+    #[arg(short, long)]
+    debugdraw: bool,
+
+    #[arg(short, long)]
+    pause: bool,
+
+    #[arg(short, long, default_value_t = 60)]
+    fps: u32,
+
+    #[arg(long, default_value_t = 10)]
+    buffersize: usize,
+
+    #[arg(value_name = "FILE")]
+    path: PathBuf,
+}
 
 struct Frame {
     size: (u32, u32),
@@ -19,11 +40,12 @@ struct Frame {
     dbg: Vec<DLDecoderResult>,
 }
 
-const FRAME_DURATION: Duration = Duration::new(0, 1_000_000_000u32 / 60);
 
 fn main() {
-    let (sender, receiver) = sync_channel::<Frame>(10);
-    let bulkstream_f = File::open(args().nth(1).unwrap()).expect("Failed to open bulkstream");
+    let args = Args::parse();
+    let frame_duration = Duration::new(0, 1_000_000_000u32 / args.fps);
+    let (sender, receiver) = sync_channel::<Frame>(args.buffersize);
+    let bulkstream_f = File::open(args.path).expect("Failed to open bulkstream");
     thread::spawn(move || {
         let mut bulkstream = BufReader::new(bulkstream_f);
         let mut decoder_ctx = DLDecoder::default();
@@ -80,9 +102,9 @@ fn main() {
     let mut debugtex: Option<Texture> = None;
     let mut event_pump = sdl_context.event_pump().unwrap();
     let mut cur_size = (0, 0);
-    let mut playing = true;
+    let mut playing = !args.pause;
     let mut stepping = false;
-    let mut draw_debug = false;
+    let mut draw_debug = args.debugdraw;
     'mainloop: loop {
         for event in event_pump.poll_iter() {
             match event {
@@ -187,7 +209,7 @@ fn main() {
             }
         }
         canvas.present();
-        sleep(FRAME_DURATION);
+        sleep(frame_duration);
     }
     println!("loop finished");
     // let mut ramdump = File::create_new("ramdump").unwrap();
