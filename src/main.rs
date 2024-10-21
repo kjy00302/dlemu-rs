@@ -165,17 +165,11 @@ fn main() {
                                             let width = frame.size.0 as i32;
                                             let start = ((addr - frame.addr) >> 1) as i32;
                                             let len = *len as i32;
-                                            if frame.size.0 > 0 {
-                                                let y = start / width;
+                                            if width > 0 {
                                                 let x = start % width;
-                                                c.draw_line((x, y), (x + len - 1, y)).unwrap();
-                                                if x + len > width {
-                                                    c.draw_line(
-                                                        (0, y + 1),
-                                                        (width - x - len - 1, y + 1),
-                                                    )
-                                                    .unwrap();
-                                                }
+                                                let y = start / width;
+                                                let end = x + len - 1;
+                                                c.draw_line((x, y), (end, y)).unwrap();
                                             }
                                         }
                                         _ => {}
