@@ -1,4 +1,6 @@
-use sdl2::{event::Event, keyboard::Keycode, pixels::PixelFormatEnum, render::Texture};
+use sdl2::{
+    event::Event, keyboard::Keycode, pixels::Color, pixels::PixelFormatEnum, render::Texture,
+};
 use std::env::args;
 use std::fs::File;
 use std::io::BufReader;
@@ -13,6 +15,8 @@ use dldecoder::{DLDecoder, DLDecoderResult};
 struct Frame {
     size: (u32, u32),
     data: Vec<u8>,
+    addr: usize,
+    dbg: Vec<DLDecoderResult>,
 }
 
 const FRAME_DURATION: Duration = Duration::new(0, 1_000_000_000u32 / 60);
@@ -23,6 +27,7 @@ fn main() {
     thread::spawn(move || {
         let mut bulkstream = BufReader::new(bulkstream_f);
         let mut decoder_ctx = DLDecoder::default();
+        let mut dbg = vec![];
 
         'run: loop {
             if let Ok(result) = decoder_ctx.parse_cmd(&mut bulkstream) {
@@ -42,15 +47,23 @@ fn main() {
                                         .send(Frame {
                                             size: (w as u32, h as u32),
                                             data,
+                                            addr,
+                                            dbg,
                                         })
                                         .is_err()
                                     {
                                         break 'run;
                                     }
+                                    dbg = vec![];
                                 }
                             }
                             _ => {}
                         }
+                    }
+                    DLDecoderResult::FILL(_, _, true)
+                    | DLDecoderResult::MEMCPY(_, _, true)
+                    | DLDecoderResult::DECOMP(_, _, true) => {
+                        dbg.push(result);
                     }
                     _ => {}
                 }
@@ -73,9 +86,11 @@ fn main() {
     let mut canvas = window.into_canvas().build().unwrap();
     let texture_creator = canvas.texture_creator();
     let mut rendertex: Option<Texture> = None;
+    let mut debugtex: Option<Texture> = None;
     let mut event_pump = sdl_context.event_pump().unwrap();
     let mut cur_size = (0, 0);
     let mut playing = true;
+    let mut draw_debug = false;
     'mainloop: loop {
         for event in event_pump.poll_iter() {
             match event {
@@ -86,6 +101,7 @@ fn main() {
                     ..
                 } => match keycode {
                     Some(Keycode::Space) => playing = !playing,
+                    Some(Keycode::D) => draw_debug = !draw_debug,
                     _ => {}
                 },
                 _ => {}
@@ -103,6 +119,13 @@ fn main() {
                                 .create_texture_streaming(PixelFormatEnum::RGB565, w, h)
                                 .unwrap(),
                         );
+                        debugtex = Some({
+                            let mut tex = texture_creator
+                                .create_texture_target(PixelFormatEnum::RGBA8888, w, h)
+                                .unwrap();
+                            tex.set_blend_mode(sdl2::render::BlendMode::Add);
+                            tex
+                        });
                         println!("output resize: {}x{}", w, h);
                         cur_size = frame.size;
                     }
@@ -111,9 +134,52 @@ fn main() {
                             buffer.copy_from_slice(&frame.data);
                         })
                         .unwrap();
-                        canvas.copy(tex, None, None).unwrap();
                     }
-                    canvas.present();
+                    if let Some(tex) = &mut debugtex {
+                        canvas
+                            .with_texture_canvas(tex, |c| {
+                                c.set_draw_color(Color::RGBA(0, 0, 0, 0));
+                                c.clear();
+                                for i in &frame.dbg {
+                                    let color = match i {
+                                        DLDecoderResult::FILL(_, _, true) => {
+                                            Color::RGBA(255, 0, 0, 51)
+                                        }
+                                        DLDecoderResult::DECOMP(_, _, true) => {
+                                            Color::RGBA(0, 255, 0, 51)
+                                        }
+                                        DLDecoderResult::MEMCPY(_, _, true) => {
+                                            Color::RGBA(0, 0, 255, 51)
+                                        }
+                                        _ => Color::RGBA(0, 0, 0, 0),
+                                    };
+                                    c.set_draw_color(color);
+                                    match i {
+                                        DLDecoderResult::FILL(addr, len, _)
+                                        | DLDecoderResult::DECOMP(addr, len, _)
+                                        | DLDecoderResult::MEMCPY(addr, len, _) => {
+                                            let width = frame.size.0 as i32;
+                                            let start = ((addr - frame.addr) >> 1) as i32;
+                                            let len = *len as i32;
+                                            if frame.size.0 > 0 {
+                                                let y = start / width;
+                                                let x = start % width;
+                                                c.draw_line((x, y), (x + len - 1, y)).unwrap();
+                                                if x + len > width {
+                                                    c.draw_line(
+                                                        (0, y + 1),
+                                                        (width - x - len - 1, y + 1),
+                                                    )
+                                                    .unwrap();
+                                                }
+                                            }
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                            })
+                            .unwrap();
+                    }
                 }
                 Err(TryRecvError::Empty) => {}
                 Err(TryRecvError::Disconnected) => {
@@ -121,6 +187,16 @@ fn main() {
                 }
             }
         }
+
+        if let Some(tex) = &mut rendertex {
+            canvas.copy(&tex, None, None).unwrap();
+        }
+        if draw_debug {
+            if let Some(tex) = &mut debugtex {
+                canvas.copy(&tex, None, None).unwrap();
+            }
+        }
+        canvas.present();
         let delta = Instant::now() - last_time;
         if delta > FRAME_DURATION {
             if delta.subsec_millis() > FRAME_DURATION.subsec_millis() + 5 {
