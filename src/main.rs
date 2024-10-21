@@ -90,6 +90,7 @@ fn main() {
     let mut event_pump = sdl_context.event_pump().unwrap();
     let mut cur_size = (0, 0);
     let mut playing = true;
+    let mut stepping = false;
     let mut draw_debug = false;
     'mainloop: loop {
         for event in event_pump.poll_iter() {
@@ -102,13 +103,17 @@ fn main() {
                 } => match keycode {
                     Some(Keycode::Space) => playing = !playing,
                     Some(Keycode::D) => draw_debug = !draw_debug,
+                    Some(Keycode::Period) => {
+                        playing = false;
+                        stepping = true;
+                    }
                     _ => {}
                 },
                 _ => {}
             }
         }
         let last_time = Instant::now();
-        if playing {
+        if playing | stepping {
             match receiver.try_recv() {
                 Ok(frame) => {
                     if frame.size != cur_size {
@@ -186,6 +191,7 @@ fn main() {
                     break;
                 }
             }
+            stepping = false;
         }
 
         if let Some(tex) = &mut rendertex {
