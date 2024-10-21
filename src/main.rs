@@ -1,15 +1,14 @@
-use byteorder::{BigEndian, ByteOrder, ReadBytesExt};
 use sdl2::{event::Event, keyboard::Keycode, pixels::PixelFormatEnum, render::Texture};
 use std::env::args;
 use std::fs::File;
-use std::io::{BufReader, ErrorKind};
+use std::io::BufReader;
 use std::sync::mpsc::{sync_channel, TryRecvError};
 use std::thread;
 use std::thread::sleep;
 use std::time::{Duration, Instant};
 
 mod dldecoder;
-use dldecoder::DLDecoder;
+use dldecoder::{DLDecoder, DLDecoderResult};
 
 struct Frame {
     size: (u32, u32),
@@ -24,79 +23,39 @@ fn main() {
     thread::spawn(move || {
         let mut bulkstream = BufReader::new(bulkstream_f);
         let mut decoder_ctx = DLDecoder::default();
-        let mut reg = [0u8; 0x100];
 
-        loop {
-            match bulkstream.read_u8() {
-                Ok(n) => {
-                    if n != 0xaf {
-                        continue;
-                    }
-                }
-                Err(e) => match e.kind() {
-                    ErrorKind::UnexpectedEof => break,
-                    _ => panic!("Cannot read: {}", e),
-                },
-            };
-            match bulkstream.read_u8().unwrap() {
-                0x20 => {
-                    // set register
-                    let addr = bulkstream.read_u8().unwrap();
-                    let val = bulkstream.read_u8().unwrap();
-                    reg[addr as usize] = val;
-                    match addr {
-                        0xff => {
-                            if val == 0xff && reg[0x1f] == 0 {
-                                // display new frame
-                                let addr = BigEndian::read_u24(&reg[0x20..0x23]) as usize;
-                                let w = BigEndian::read_u16(&reg[0x0f..0x11]) as usize;
-                                let h = BigEndian::read_u16(&reg[0x17..0x19]) as usize;
-                                let len = w * h * 2;
-                                let mut data = vec![0u8; len];
-                                decoder_ctx.dumpbuffer(&mut data, addr, len);
-                                sender
-                                    .send(Frame {
-                                        size: (w as u32, h as u32),
-                                        data,
-                                    })
-                                    .unwrap();
+        'run: loop {
+            if let Ok(result) = decoder_ctx.parse_cmd(&mut bulkstream) {
+                match result {
+                    DLDecoderResult::SETREG(addr, val) => {
+                        match addr {
+                            0xff => {
+                                if val == 0xff && decoder_ctx.get_reg(0x1f) == 0 {
+                                    // display new frame
+                                    let addr = decoder_ctx.get_current_address();
+                                    let w = decoder_ctx.get_width();
+                                    let h = decoder_ctx.get_height();
+                                    let len = w * h * 2;
+                                    let mut data = vec![0u8; len];
+                                    decoder_ctx.dumpbuffer(&mut data, addr, len);
+                                    if sender
+                                        .send(Frame {
+                                            size: (w as u32, h as u32),
+                                            data,
+                                        })
+                                        .is_err()
+                                    {
+                                        break 'run;
+                                    }
+                                }
                             }
+                            _ => {}
                         }
-                        _ => {}
                     }
+                    _ => {}
                 }
-                0x61 => {
-                    // fill 8bit
-                    decoder_ctx.fill8(&mut bulkstream).unwrap();
-                }
-                0x62 => {
-                    // memcpy 8bit
-                    decoder_ctx.memcopy8(&mut bulkstream).unwrap();
-                }
-                0x69 => {
-                    // fill 16bit
-                    decoder_ctx.fill16(&mut bulkstream).unwrap();
-                }
-                0x6a => {
-                    // memcpy 16bit
-                    decoder_ctx.memcopy16(&mut bulkstream).unwrap();
-                }
-                0x70 => {
-                    // decompress 8bit
-                    decoder_ctx.decomp8(&mut bulkstream).unwrap();
-                }
-                0x78 => {
-                    // decompress 16bit
-                    decoder_ctx.decomp16(&mut bulkstream).unwrap();
-                }
-                0xe0 => {
-                    // load decompression table
-                    decoder_ctx.load_decomp(&mut bulkstream).unwrap();
-                }
-                0xa0 => {}
-                i => {
-                    panic!("Unexpected command: {:x}", i)
-                }
+            } else {
+                break 'run;
             }
         }
         println!("decode thread finished");
