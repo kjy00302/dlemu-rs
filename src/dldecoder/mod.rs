@@ -13,9 +13,9 @@ fn wrap256(n: u8) -> usize {
 }
 
 pub enum DLDecoderResult {
-    FILL(usize, usize),
-    MEMCPY(usize, usize),
-    DECOMP(usize, usize),
+    FILL(usize, usize, bool),
+    MEMCPY(usize, usize, bool),
+    DECOMP(usize, usize, bool),
     SETREG(u8, u8),
     NOOP,
 }
@@ -135,7 +135,7 @@ impl DLDecoder {
         let cnt = wrap256(reader.read_u8()?);
         let srcaddr = reader.read_u24::<BigEndian>()? as usize;
         self.gfxram.copy_within(srcaddr..srcaddr + cnt, dstaddr);
-        Ok(DLDecoderResult::MEMCPY(dstaddr, cnt))
+        Ok(DLDecoderResult::MEMCPY(dstaddr, cnt, false))
     }
 
     fn cmd_memcopy16(
@@ -143,10 +143,10 @@ impl DLDecoder {
         reader: &mut dyn BufRead,
     ) -> Result<DLDecoderResult, std::io::Error> {
         let dstaddr = reader.read_u24::<BigEndian>()? as usize;
-        let cnt = wrap256(reader.read_u8()?) * 2;
+        let cnt = wrap256(reader.read_u8()?);
         let srcaddr = reader.read_u24::<BigEndian>()? as usize;
-        self.gfxram.copy_within(srcaddr..srcaddr + cnt, dstaddr);
-        Ok(DLDecoderResult::MEMCPY(dstaddr, cnt))
+        self.gfxram.copy_within(srcaddr..srcaddr + cnt * 2, dstaddr);
+        Ok(DLDecoderResult::MEMCPY(dstaddr, cnt, true))
     }
 
     fn cmd_fill8(&mut self, reader: &mut dyn BufRead) -> Result<DLDecoderResult, std::io::Error> {
@@ -161,7 +161,7 @@ impl DLDecoder {
             totalcnt -= cnt;
             addr += cnt;
         }
-        Ok(DLDecoderResult::FILL(addr, totalcnt))
+        Ok(DLDecoderResult::FILL(addr, totalcnt, false))
     }
 
     fn cmd_fill16(&mut self, reader: &mut dyn BufRead) -> Result<DLDecoderResult, std::io::Error> {
@@ -178,7 +178,7 @@ impl DLDecoder {
             totalcnt -= cnt;
             addr += cnt * 2;
         }
-        Ok(DLDecoderResult::FILL(addr, totalcnt))
+        Ok(DLDecoderResult::FILL(addr, totalcnt, true))
     }
 
     fn cmd_decomp8(&mut self, reader: &mut dyn BufRead) -> Result<DLDecoderResult, std::io::Error> {
@@ -207,7 +207,7 @@ impl DLDecoder {
             self.gfxram[addr + i] = accumulator;
             tableidx = 0;
         }
-        Ok(DLDecoderResult::DECOMP(addr, cnt))
+        Ok(DLDecoderResult::DECOMP(addr, cnt, false))
     }
 
     fn cmd_decomp16(
@@ -240,6 +240,6 @@ impl DLDecoder {
             self.gfxram[addr + i * 2] = (accumulator & 0xff) as u8;
             tableidx = 8;
         }
-        Ok(DLDecoderResult::DECOMP(addr, cnt))
+        Ok(DLDecoderResult::DECOMP(addr, cnt, true))
     }
 }
