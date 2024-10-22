@@ -136,6 +136,7 @@ fn main() {
                     Some(Keycode::Space) => playing = !playing,
                     Some(Keycode::D) => draw_debug = !draw_debug,
                     Some(Keycode::I) => show_info = !show_info,
+                    Some(Keycode::Q) => break 'mainloop,
                     Some(Keycode::Period) => {
                         playing = false;
                         stepping = true;
