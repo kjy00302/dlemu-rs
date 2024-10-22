@@ -14,11 +14,17 @@ use clap::Parser;
 mod dldecoder;
 use dldecoder::{DLDecoder, DLDecoderResult};
 
+mod drawtext;
+use drawtext::{draw_text, generate_font_texture};
+
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
 struct Args {
     #[arg(short, long)]
     debugdraw: bool,
+
+    #[arg(short, long)]
+    info: bool,
 
     #[arg(short, long)]
     pause: bool,
@@ -38,14 +44,15 @@ struct Frame {
     data: Vec<u8>,
     addr: usize,
     dbg: Vec<DLDecoderResult>,
+    reg: [u8; 256],
 }
-
 
 fn main() {
     let args = Args::parse();
     let frame_duration = Duration::new(0, 1_000_000_000u32 / args.fps);
     let (sender, receiver) = sync_channel::<Frame>(args.buffersize);
     let bulkstream_f = File::open(args.path).expect("Failed to open bulkstream");
+
     thread::spawn(move || {
         let mut bulkstream = BufReader::new(bulkstream_f);
         let mut decoder_ctx = DLDecoder::default();
@@ -61,13 +68,16 @@ fn main() {
                         let h = decoder_ctx.get_height();
                         let len = w * h * 2;
                         let mut data = vec![0u8; len];
+                        let mut reg = [0u8; 256];
                         decoder_ctx.dumpbuffer(&mut data, addr, len);
+                        decoder_ctx.dumpreg(&mut reg);
                         if sender
                             .send(Frame {
                                 size: (w as u32, h as u32),
                                 data,
                                 addr,
                                 dbg,
+                                reg,
                             })
                             .is_err()
                         {
@@ -100,11 +110,20 @@ fn main() {
     let texture_creator = canvas.texture_creator();
     let mut rendertex: Option<Texture> = None;
     let mut debugtex: Option<Texture> = None;
+    let font = {
+        let mut t = generate_font_texture(&texture_creator, Color::BLACK, Color::WHITE);
+        t.set_blend_mode(sdl2::render::BlendMode::Blend);
+        t.set_alpha_mod(180);
+        t
+    };
     let mut event_pump = sdl_context.event_pump().unwrap();
     let mut cur_size = (0, 0);
+    let mut framecnt = 0;
+    let mut reg_localcopy = [0u8; 256];
     let mut playing = !args.pause;
     let mut stepping = false;
     let mut draw_debug = args.debugdraw;
+    let mut show_info = args.info;
     'mainloop: loop {
         for event in event_pump.poll_iter() {
             match event {
@@ -116,6 +135,7 @@ fn main() {
                 } => match keycode {
                     Some(Keycode::Space) => playing = !playing,
                     Some(Keycode::D) => draw_debug = !draw_debug,
+                    Some(Keycode::I) => show_info = !show_info,
                     Some(Keycode::Period) => {
                         playing = false;
                         stepping = true;
@@ -191,6 +211,8 @@ fn main() {
                             })
                             .unwrap();
                     }
+                    reg_localcopy = frame.reg;
+                    framecnt += 1;
                 }
                 Err(TryRecvError::Empty) => {}
                 Err(TryRecvError::Disconnected) => {
@@ -208,6 +230,25 @@ fn main() {
                 canvas.copy(tex, None, None).unwrap();
             }
         }
+        if show_info {
+            draw_text(
+                &mut canvas,
+                &font,
+                (0, 0).into(),
+                &format!("frame: {}", framecnt),
+            );
+            for i in 0..256 {
+                let x = i % 16;
+                let y = i / 16;
+                draw_text(
+                    &mut canvas,
+                    &font,
+                    (x * 16, y * 8 + 8).into(),
+                    &format!("{:02X}", reg_localcopy[i as usize]),
+                );
+            }
+        }
+
         canvas.present();
         sleep(frame_duration);
     }

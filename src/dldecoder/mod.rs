@@ -40,6 +40,9 @@ impl DLDecoder {
     pub fn dumpbuffer(&self, buf: &mut [u8], addr: usize, len: usize) {
         buf.copy_from_slice(&self.gfxram[addr..addr + len]);
     }
+    pub fn dumpreg(&self, buf: &mut [u8]) {
+        buf.copy_from_slice(&self.reg[..]);
+    }
 
     pub fn set_reg(&mut self, addr: u8, value: u8) {
         self.reg[addr as usize] = value
