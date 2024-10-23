@@ -52,9 +52,6 @@ impl DLDecoder {
         buf.copy_from_slice(&self.reg[..]);
     }
 
-    pub fn set_reg(&mut self, addr: u8, value: u8) {
-        self.reg[addr as usize] = value
-    }
     pub fn get_reg(&mut self, addr: u8) -> u8 {
         self.reg[addr as usize]
     }
