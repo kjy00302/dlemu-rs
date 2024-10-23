@@ -167,9 +167,10 @@ fn main() {
                         );
                         debugtex = Some({
                             let mut tex = texture_creator
-                                .create_texture_target(PixelFormatEnum::RGBA8888, w, h)
+                                .create_texture_target(PixelFormatEnum::RGB888, w, h)
                                 .unwrap();
                             tex.set_blend_mode(sdl2::render::BlendMode::Add);
+                            tex.set_alpha_mod(51);
                             tex
                         });
                         println!("output resize: {}x{}", w, h);
@@ -191,20 +192,14 @@ fn main() {
                     if let Some(tex) = &mut debugtex {
                         canvas
                             .with_texture_canvas(tex, |c| {
-                                c.set_draw_color(Color::RGBA(0, 0, 0, 0));
+                                c.set_draw_color(Color::BLACK);
                                 c.clear();
                                 for i in &frame.dbg {
                                     let color = match i {
-                                        DLDecoderResult::Fill(_, _, true) => {
-                                            Color::RGBA(255, 0, 0, 51)
-                                        }
-                                        DLDecoderResult::Decomp(_, _, true) => {
-                                            Color::RGBA(0, 255, 0, 51)
-                                        }
-                                        DLDecoderResult::Memcpy(_, _, true) => {
-                                            Color::RGBA(0, 0, 255, 51)
-                                        }
-                                        _ => Color::RGBA(0, 0, 0, 0),
+                                        DLDecoderResult::Fill(_, _, true) => Color::RED,
+                                        DLDecoderResult::Decomp(_, _, true) => Color::GREEN,
+                                        DLDecoderResult::Memcpy(_, _, true) => Color::BLUE,
+                                        _ => Color::BLACK,
                                     };
                                     c.set_draw_color(color);
                                     match i {
