@@ -41,8 +41,10 @@ struct Args {
 
 struct Frame {
     size: (u32, u32),
-    data: Vec<u8>,
-    addr: usize,
+    data16: Vec<u8>,
+    data8: Vec<u8>,
+    addr16: usize,
+    addr8: usize,
     dbg: Vec<DLDecoderResult>,
     reg: [u8; 256],
 }
@@ -63,19 +65,24 @@ fn main() {
                 DLDecoderResult::Setreg(addr, val) => {
                     if addr == 0xff && val == 0xff && decoder_ctx.get_reg(0x1f) == 0 {
                         // display new frame
-                        let addr = decoder_ctx.get_current_address();
+                        let addr16 = decoder_ctx.get_current_address_16();
+                        let addr8 = decoder_ctx.get_current_address_8();
                         let w = decoder_ctx.get_width();
                         let h = decoder_ctx.get_height();
-                        let len = w * h * 2;
-                        let mut data = vec![0u8; len];
+                        let len = w * h;
+                        let mut data16 = vec![0u8; len * 2];
+                        let mut data8 = vec![0u8; len];
                         let mut reg = [0u8; 256];
-                        decoder_ctx.dumpbuffer(&mut data, addr, len);
+                        decoder_ctx.dumpbuffer(&mut data16, addr16, len * 2);
+                        decoder_ctx.dumpbuffer(&mut data8, addr8, len);
                         decoder_ctx.dumpreg(&mut reg);
                         if sender
                             .send(Frame {
                                 size: (w as u32, h as u32),
-                                data,
-                                addr,
+                                data16,
+                                data8,
+                                addr16,
+                                addr8,
                                 dbg,
                                 reg,
                             })
@@ -108,7 +115,8 @@ fn main() {
 
     let mut canvas = window.into_canvas().build().unwrap();
     let texture_creator = canvas.texture_creator();
-    let mut rendertex: Option<Texture> = None;
+    let mut rendertex16: Option<Texture> = None;
+    let mut rendertex8: Option<Texture> = None;
     let mut debugtex: Option<Texture> = None;
     let font = {
         let mut t = generate_font_texture(&texture_creator, Color::BLACK, Color::WHITE);
@@ -120,6 +128,7 @@ fn main() {
     let mut cur_size = (0, 0);
     let mut framecnt = 0;
     let mut reg_localcopy = [0u8; 256];
+    let mut addr = (0, 0);
     let mut playing = !args.pause;
     let mut stepping = false;
     let mut draw_debug = args.debugdraw;
@@ -152,11 +161,18 @@ fn main() {
                     if frame.size != cur_size {
                         let (w, h) = frame.size;
                         canvas.window_mut().set_size(w, h).unwrap();
-                        rendertex = Some(
+                        rendertex16 = Some(
                             texture_creator
                                 .create_texture_streaming(PixelFormatEnum::RGB565, w, h)
                                 .unwrap(),
                         );
+                        rendertex8 = Some({
+                            let mut tex = texture_creator
+                                .create_texture_streaming(PixelFormatEnum::RGB888, w, h)
+                                .unwrap();
+                            tex.set_blend_mode(sdl2::render::BlendMode::Add);
+                            tex
+                        });
                         debugtex = Some({
                             let mut tex = texture_creator
                                 .create_texture_target(PixelFormatEnum::RGBA8888, w, h)
@@ -167,9 +183,20 @@ fn main() {
                         println!("output resize: {}x{}", w, h);
                         cur_size = frame.size;
                     }
-                    if let Some(tex) = &mut rendertex {
+                    if let Some(tex) = &mut rendertex16 {
                         tex.with_lock(None, |buffer: &mut [u8], _pitch: usize| {
-                            buffer.copy_from_slice(&frame.data);
+                            buffer.copy_from_slice(&frame.data16);
+                        })
+                        .unwrap();
+                    }
+                    if let Some(tex) = &mut rendertex8 {
+                        tex.with_lock(None, |buffer: &mut [u8], _pitch: usize| {
+                            for i in 0..frame.data8.len() {
+                                let a = frame.data8[i];
+                                buffer[i * 4 + 2] = a >> 5;
+                                buffer[i * 4 + 1] = (a >> 3) & 3;
+                                buffer[i * 4] = a & 7;
+                            }
                         })
                         .unwrap();
                     }
@@ -197,7 +224,7 @@ fn main() {
                                         | DLDecoderResult::Decomp(addr, len, _)
                                         | DLDecoderResult::Memcpy(addr, len, _) => {
                                             let width = frame.size.0 as i32;
-                                            let start = ((addr - frame.addr) >> 1) as i32;
+                                            let start = ((addr - frame.addr16) >> 1) as i32;
                                             let len = *len as i32;
                                             if width > 0 {
                                                 let x = start % width;
@@ -213,6 +240,7 @@ fn main() {
                             .unwrap();
                     }
                     reg_localcopy = frame.reg;
+                    addr = (frame.addr16, frame.addr8);
                     framecnt += 1;
                 }
                 Err(TryRecvError::Empty) => {}
@@ -223,7 +251,10 @@ fn main() {
             stepping = false;
         }
 
-        if let Some(tex) = &mut rendertex {
+        if let Some(tex) = &mut rendertex16 {
+            canvas.copy(tex, None, None).unwrap();
+        }
+        if let Some(tex) = &mut rendertex8 {
             canvas.copy(tex, None, None).unwrap();
         }
         if draw_debug {
@@ -238,13 +269,19 @@ fn main() {
                 (0, 0).into(),
                 &format!("frame: {}", framecnt),
             );
+            draw_text(
+                &mut canvas,
+                &font,
+                (0, 8).into(),
+                &format!("addr16: {:06X}, addr8: {:06X}", addr.0, addr.1),
+            );
             for i in 0..256 {
                 let x = i % 16;
                 let y = i / 16;
                 draw_text(
                     &mut canvas,
                     &font,
-                    (x * 16, y * 8 + 8).into(),
+                    (x * 16, y * 8 + 16).into(),
                     &format!("{:02X}", reg_localcopy[i as usize]),
                 );
             }

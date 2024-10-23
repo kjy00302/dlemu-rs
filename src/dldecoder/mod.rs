@@ -38,7 +38,15 @@ impl Default for DLDecoder {
 
 impl DLDecoder {
     pub fn dumpbuffer(&self, buf: &mut [u8], addr: usize, len: usize) {
-        buf.copy_from_slice(&self.gfxram[addr..addr + len]);
+        // check wrapping
+        if addr + len > 0xffffff {
+            let over = addr + len - 0x100_0000;
+            let until_end_cnt = 0x100_0000 - addr;
+            buf[0..until_end_cnt].copy_from_slice(&self.gfxram[addr..]);
+            buf[until_end_cnt..].copy_from_slice(&self.gfxram[..over]);
+        } else {
+            buf.copy_from_slice(&self.gfxram[addr..addr + len]);
+        }
     }
     pub fn dumpreg(&self, buf: &mut [u8]) {
         buf.copy_from_slice(&self.reg[..]);
@@ -56,8 +64,11 @@ impl DLDecoder {
     pub fn get_height(&self) -> usize {
         BigEndian::read_u16(&self.reg[0x17..0x19]) as usize
     }
-    pub fn get_current_address(&self) -> usize {
+    pub fn get_current_address_16(&self) -> usize {
         BigEndian::read_u24(&self.reg[0x20..0x23]) as usize
+    }
+    pub fn get_current_address_8(&self) -> usize {
+        BigEndian::read_u24(&self.reg[0x26..0x29]) as usize
     }
 
     pub fn parse_cmd(
