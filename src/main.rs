@@ -115,8 +115,7 @@ fn main() {
 
     let mut canvas = window.into_canvas().build().unwrap();
     let texture_creator = canvas.texture_creator();
-    let mut rendertex16: Option<Texture> = None;
-    let mut rendertex8: Option<Texture> = None;
+    let mut rendertex: Option<Texture> = None;
     let mut debugtex: Option<Texture> = None;
     let font = {
         let mut t = generate_font_texture(&texture_creator, Color::BLACK, Color::WHITE);
@@ -161,18 +160,11 @@ fn main() {
                     if frame.size != cur_size {
                         let (w, h) = frame.size;
                         canvas.window_mut().set_size(w, h).unwrap();
-                        rendertex16 = Some(
+                        rendertex = Some(
                             texture_creator
-                                .create_texture_streaming(PixelFormatEnum::RGB565, w, h)
+                                .create_texture_streaming(PixelFormatEnum::RGB888, w, h)
                                 .unwrap(),
                         );
-                        rendertex8 = Some({
-                            let mut tex = texture_creator
-                                .create_texture_streaming(PixelFormatEnum::RGB888, w, h)
-                                .unwrap();
-                            tex.set_blend_mode(sdl2::render::BlendMode::Add);
-                            tex
-                        });
                         debugtex = Some({
                             let mut tex = texture_creator
                                 .create_texture_target(PixelFormatEnum::RGBA8888, w, h)
@@ -183,19 +175,15 @@ fn main() {
                         println!("output resize: {}x{}", w, h);
                         cur_size = frame.size;
                     }
-                    if let Some(tex) = &mut rendertex16 {
-                        tex.with_lock(None, |buffer: &mut [u8], _pitch: usize| {
-                            buffer.copy_from_slice(&frame.data16);
-                        })
-                        .unwrap();
-                    }
-                    if let Some(tex) = &mut rendertex8 {
+                    if let Some(tex) = &mut rendertex {
                         tex.with_lock(None, |buffer: &mut [u8], _pitch: usize| {
                             for i in 0..frame.data8.len() {
-                                let a = frame.data8[i];
-                                buffer[i * 4 + 2] = a >> 5;
-                                buffer[i * 4 + 1] = (a >> 3) & 3;
-                                buffer[i * 4] = a & 7;
+                                let b = frame.data8[i];
+                                let h = (frame.data16[i * 2 + 1] as u16) << 8
+                                    | frame.data16[i * 2] as u16;
+                                buffer[i * 4 + 2] = ((h & 0xf800) >> 8) as u8 | b >> 5;
+                                buffer[i * 4 + 1] = ((h & 0x7e0) >> 3) as u8 | ((b >> 3) & 3);
+                                buffer[i * 4] = ((h & 0x1f) << 3) as u8 | b & 7;
                             }
                         })
                         .unwrap();
@@ -251,10 +239,7 @@ fn main() {
             stepping = false;
         }
 
-        if let Some(tex) = &mut rendertex16 {
-            canvas.copy(tex, None, None).unwrap();
-        }
-        if let Some(tex) = &mut rendertex8 {
+        if let Some(tex) = &mut rendertex {
             canvas.copy(tex, None, None).unwrap();
         }
         if draw_debug {
