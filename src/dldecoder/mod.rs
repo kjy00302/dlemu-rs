@@ -172,7 +172,7 @@ impl DLDecoder {
             totalcnt -= cnt;
             addr += cnt;
         }
-        Ok(DLDecoderResult::Fill(addr, totalcnt, false))
+        Ok(DLDecoderResult::Fill(addr - totalcnt, totalcnt, false))
     }
 
     fn cmd_fill16(&mut self, reader: &mut dyn BufRead) -> Result<DLDecoderResult, std::io::Error> {
@@ -189,7 +189,7 @@ impl DLDecoder {
             totalcnt -= cnt;
             addr += cnt * 2;
         }
-        Ok(DLDecoderResult::Fill(addr, totalcnt, true))
+        Ok(DLDecoderResult::Fill(addr - totalcnt * 2, totalcnt, true))
     }
 
     fn cmd_decomp8(&mut self, reader: &mut dyn BufRead) -> Result<DLDecoderResult, std::io::Error> {
